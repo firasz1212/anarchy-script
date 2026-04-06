@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QB Banking</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="hidden">
+        <!-- Main Banking UI -->
+        <div class="banking-container">
+            <!-- Sidebar -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-header">
+                    <div class="logo">
+                        <i class="fas fa-university"></i>
+                        <span>QB Banking</span>
+                    </div>
+                    <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+
+                <!-- Account Selector -->
+                <div class="account-selector">
+                    <select id="accountSelect" class="account-dropdown">
+                        <option value="">Select Account</option>
+                    </select>
+                </div>
+
+                <!-- Navigation -->
+                <nav class="sidebar-nav">
+                    <a href="#" class="nav-item active" data-page="dashboard">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="transactions">
+                        <i class="fas fa-exchange-alt"></i>
+                        <span>Transactions</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="transfer">
+                        <i class="fas fa-paper-plane"></i>
+                        <span>Transfer</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="cards">
+                        <i class="fas fa-credit-card"></i>
+                        <span>Cards</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="loans">
+                        <i class="fas fa-hand-holding-usd"></i>
+                        <span>Loans</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="billing">
+                        <i class="fas fa-file-invoice-dollar"></i>
+                        <span>Billing</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="taxes">
+                        <i class="fas fa-receipt"></i>
+                        <span>Taxes</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="accounts">
+                        <i class="fas fa-wallet"></i>
+                        <span>Accounts</span>
+                    </a>
+                </nav>
+
+                <!-- Sidebar Footer -->
+                <div class="sidebar-footer">
+                    <div class="player-info" id="playerInfo">
+                        <i class="fas fa-user-circle"></i>
+                        <span id="playerName">Player</span>
+                    </div>
+                    <button class="close-btn" id="closeBtn">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Close</span>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Main Content Area -->
+            <main class="main-content">
+                <!-- Dashboard Page -->
+                <div class="page active" id="page-dashboard">
+                    <div class="page-header">
+                        <h1>Dashboard</h1>
+                        <div class="header-actions">
+                            <span class="badge" id="creditScoreBadge">Credit Score: --</span>
+                        </div>
+                    </div>
+
+                    <!-- Stats Cards -->
+                    <div class="stats-grid">
+                        <div class="stat-card primary">
+                            <div class="stat-icon"><i class="fas fa-wallet"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Balance</span>
+                                <span class="stat-value" id="dashBalance">$0.00</span>
+                            </div>
+                        </div>
+                        <div class="stat-card success">
+                            <div class="stat-icon"><i class="fas fa-arrow-down"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Income (7d)</span>
+                                <span class="stat-value" id="dashIncome">$0.00</span>
+                            </div>
+                        </div>
+                        <div class="stat-card danger">
+                            <div class="stat-icon"><i class="fas fa-arrow-up"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Expenses (7d)</span>
+                                <span class="stat-value" id="dashExpenses">$0.00</span>
+                            </div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-icon"><i class="fas fa-hand-holding-usd"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Active Loans</span>
+                                <span class="stat-value" id="dashLoans">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chart -->
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3>Weekly Overview</h3>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="weeklyChart" height="250"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="quick-actions">
+                        <h3>Quick Actions</h3>
+                        <div class="actions-grid">
+                            <button class="action-btn" onclick="App.quickDeposit()">
+                                <i class="fas fa-plus-circle"></i>
+                                <span>Deposit</span>
+                            </button>
+                            <button class="action-btn" onclick="App.quickWithdraw()">
+                                <i class="fas fa-minus-circle"></i>
+                                <span>Withdraw</span>
+                            </button>
+                            <button class="action-btn" onclick="App.navigateTo('transfer')">
+                                <i class="fas fa-paper-plane"></i>
+                                <span>Transfer</span>
+                            </button>
+                            <button class="action-btn" onclick="App.navigateTo('loans')">
+                                <i class="fas fa-hand-holding-usd"></i>
+                                <span>Apply Loan</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transactions Page -->
+                <div class="page" id="page-transactions">
+                    <div class="page-header">
+                        <h1>Transaction History</h1>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="card filter-card">
+                        <div class="filters-row">
+                            <div class="filter-group">
+                                <label>Type</label>
+                                <select id="filterType">
+                                    <option value="">All</option>
+                                    <option value="deposit">Deposits</option>
+                                    <option value="withdraw">Withdrawals</option>
+                                    <option value="transfer_in">Transfers In</option>
+                                    <option value="transfer_out">Transfers Out</option>
+                                    <option value="loan_deposit">Loan Deposits</option>
+                                    <option value="loan_payment">Loan Payments</option>
+                                    <option value="invoice_payment">Invoice Payments</option>
+                                    <option value="tax_deduction">Tax Deductions</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>From</label>
+                                <input type="date" id="filterDateFrom">
+                            </div>
+                            <div class="filter-group">
+                                <label>To</label>
+                                <input type="date" id="filterDateTo">
+                            </div>
+                            <div class="filter-group search-group">
+                                <label>Search</label>
+                                <input type="text" id="filterSearch" placeholder="Search transactions...">
+                            </div>
+                            <button class="btn btn-primary" onclick="App.loadTransactions(1)">
+                                <i class="fas fa-search"></i> Filter
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Transaction List -->
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Type</th>
+                                            <th>Amount</th>
+                                            <th>Fee</th>
+                                            <th>Balance</th>
+                                            <th>Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="transactionList">
+                                        <tr><td colspan="6" class="empty-state">No transactions found</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="pagination" id="transactionPagination"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transfer Page -->
+                <div class="page" id="page-transfer">
+                    <div class="page-header">
+                        <h1>Transfer Money</h1>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="card">
+                            <div class="card-header"><h3>Instant Transfer</h3></div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Recipient IBAN</label>
+                                    <input type="text" id="transferIban" placeholder="e.g. QB1234567890" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Amount ($)</label>
+                                    <input type="number" id="transferAmount" placeholder="0.00" min="1" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Description (optional)</label>
+                                    <input type="text" id="transferDesc" placeholder="Payment for..." class="form-input">
+                                </div>
+                                <div class="fee-preview" id="transferFeePreview"></div>
+                                <button class="btn btn-primary btn-block" onclick="App.submitTransfer()">
+                                    <i class="fas fa-paper-plane"></i> Send Transfer
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header"><h3>Scheduled Transfer</h3></div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Recipient IBAN</label>
+                                    <input type="text" id="schedIban" placeholder="e.g. QB1234567890" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Amount ($)</label>
+                                    <input type="number" id="schedAmount" placeholder="0.00" min="1" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Frequency</label>
+                                    <select id="schedFrequency" class="form-input">
+                                        <option value="once">One-time</option>
+                                        <option value="daily">Daily</option>
+                                        <option value="weekly">Weekly</option>
+                                        <option value="monthly">Monthly</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Execute Date</label>
+                                    <input type="datetime-local" id="schedDate" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Description (optional)</label>
+                                    <input type="text" id="schedDesc" placeholder="Rent payment..." class="form-input">
+                                </div>
+                                <button class="btn btn-secondary btn-block" onclick="App.submitScheduledTransfer()">
+                                    <i class="fas fa-clock"></i> Schedule Transfer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cards Page -->
+                <div class="page" id="page-cards">
+                    <div class="page-header">
+                        <h1>Virtual Cards</h1>
+                        <button class="btn btn-primary" onclick="App.createCard()">
+                            <i class="fas fa-plus"></i> New Card
+                        </button>
+                    </div>
+
+                    <div class="cards-grid" id="cardsList">
+                        <div class="empty-state-box">
+                            <i class="fas fa-credit-card"></i>
+                            <p>No cards yet. Create your first virtual card!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loans Page -->
+                <div class="page" id="page-loans">
+                    <div class="page-header">
+                        <h1>Loans</h1>
+                    </div>
+
+                    <!-- Credit Score -->
+                    <div class="card credit-score-card">
+                        <div class="card-body">
+                            <div class="credit-score-display">
+                                <div class="score-circle" id="creditScoreCircle">
+                                    <span class="score-value" id="creditScoreValue">--</span>
+                                    <span class="score-label">Credit Score</span>
+                                </div>
+                                <div class="score-info">
+                                    <p>Your credit score affects loan eligibility and interest rates.</p>
+                                    <div class="score-bar">
+                                        <div class="score-fill" id="creditScoreFill"></div>
+                                    </div>
+                                    <div class="score-range">
+                                        <span>0</span><span>300</span><span>500</span><span>650</span><span>850</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Loan Plans -->
+                    <h3 class="section-title">Available Plans</h3>
+                    <div class="loan-plans" id="loanPlansList"></div>
+
+                    <!-- Active Loans -->
+                    <h3 class="section-title">Your Loans</h3>
+                    <div class="active-loans" id="activeLoansList">
+                        <div class="empty-state-box">
+                            <i class="fas fa-hand-holding-usd"></i>
+                            <p>No active loans</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Billing Page -->
+                <div class="page" id="page-billing">
+                    <div class="page-header">
+                        <h1>Billing & Invoices</h1>
+                        <button class="btn btn-primary" onclick="App.showSendInvoice()">
+                            <i class="fas fa-plus"></i> Send Invoice
+                        </button>
+                    </div>
+
+                    <!-- Tabs -->
+                    <div class="tabs">
+                        <button class="tab active" data-tab="received">Received</button>
+                        <button class="tab" data-tab="sent">Sent</button>
+                    </div>
+
+                    <!-- Received Invoices -->
+                    <div class="tab-content active" id="tab-received">
+                        <div class="invoices-list" id="receivedInvoices">
+                            <div class="empty-state-box">
+                                <i class="fas fa-file-invoice"></i>
+                                <p>No invoices received</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sent Invoices -->
+                    <div class="tab-content" id="tab-sent">
+                        <div class="invoices-list" id="sentInvoices">
+                            <div class="empty-state-box">
+                                <i class="fas fa-file-invoice"></i>
+                                <p>No invoices sent</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Taxes Page -->
+                <div class="page" id="page-taxes">
+                    <div class="page-header">
+                        <h1>Tax Records</h1>
+                    </div>
+
+                    <!-- Tax Summary -->
+                    <div class="stats-grid" id="taxSummary"></div>
+
+                    <!-- Tax Records Table -->
+                    <div class="card">
+                        <div class="card-header"><h3>Tax History</h3></div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Type</th>
+                                            <th>Taxable Amount</th>
+                                            <th>Rate</th>
+                                            <th>Tax Paid</th>
+                                            <th>Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="taxRecordsList">
+                                        <tr><td colspan="6" class="empty-state">No tax records</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accounts Page -->
+                <div class="page" id="page-accounts">
+                    <div class="page-header">
+                        <h1>My Accounts</h1>
+                        <button class="btn btn-primary" onclick="App.showCreateAccount()">
+                            <i class="fas fa-plus"></i> New Account
+                        </button>
+                    </div>
+
+                    <div class="accounts-list" id="accountsList"></div>
+                </div>
+
+                <!-- Admin Page -->
+                <div class="page" id="page-admin">
+                    <div class="page-header">
+                        <h1>Admin Panel</h1>
+                    </div>
+
+                    <!-- Admin Stats -->
+                    <div class="stats-grid" id="adminStats"></div>
+
+                    <!-- Admin Search -->
+                    <div class="card">
+                        <div class="card-header"><h3>Search Accounts</h3></div>
+                        <div class="card-body">
+                            <div class="search-bar">
+                                <input type="text" id="adminSearch" placeholder="Search by IBAN, Citizen ID, or name..." class="form-input">
+                                <button class="btn btn-primary" onclick="App.adminSearch()">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
+                            <div id="adminSearchResults"></div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Logs -->
+                    <div class="card">
+                        <div class="card-header"><h3>Admin Logs</h3></div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Admin</th>
+                                            <th>Action</th>
+                                            <th>Target</th>
+                                            <th>Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="adminLogsList">
+                                        <tr><td colspan="5" class="empty-state">No logs</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Modal Overlay -->
+        <div class="modal-overlay hidden" id="modalOverlay">
+            <div class="modal" id="modal">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Modal</h3>
+                    <button class="modal-close" onclick="App.closeModal()">&times;</button>
+                </div>
+                <div class="modal-body" id="modalBody"></div>
+                <div class="modal-footer" id="modalFooter"></div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <script src="js/charts.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
