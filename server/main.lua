@@ -18,6 +18,7 @@ RegisterNetEvent('QBCore:Server:OnPlayerLoaded', function()
     if not Player then return end
 
     local citizenid = Player.PlayerData.citizenid
+    Utils.Debug('INIT', 'Player loaded: ' .. citizenid .. ' (source: ' .. src .. ')')
 
     -- Check if player has a personal account, create one if not
     local accounts = MySQL.query.await('SELECT * FROM bank_accounts WHERE owner_citizenid = ? AND is_closed = 0', { citizenid })
@@ -41,10 +42,13 @@ RegisterNetEvent('QBCore:Server:OnPlayerLoaded', function()
 
     -- Cache player data
     CachePlayerAccounts(citizenid)
+    Utils.Debug('INIT', 'Cached accounts for ' .. citizenid .. ', credit score: ' .. tostring(GetCreditScore(citizenid)))
 
     -- Send initial data to client
+    local playerAccounts = GetPlayerAccounts(citizenid)
+    Utils.Debug('INIT', 'Sending init data to client: ' .. #playerAccounts .. ' accounts')
     TriggerClientEvent('qb-banking:client:init', src, {
-        accounts = GetPlayerAccounts(citizenid),
+        accounts = playerAccounts,
         creditScore = GetCreditScore(citizenid),
     })
 end)
@@ -53,6 +57,7 @@ RegisterNetEvent('QBCore:Server:OnPlayerUnload', function(src)
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
     local citizenid = Player.PlayerData.citizenid
+    Utils.Debug('INIT', 'Player unloaded: ' .. citizenid .. ' - clearing cache')
     -- Clear cache
     ServerCache.accounts[citizenid] = nil
     ServerCache.creditScores[citizenid] = nil
@@ -65,17 +70,23 @@ end)
 --- Get all accounts for a player
 QBCore.Functions.CreateCallback('qb-banking:server:getAccounts', function(source, cb)
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return cb({}) end
+    if not Player then Utils.Debug('ACCOUNTS', 'getAccounts: Player not found for source ' .. tostring(source)) return cb({}) end
+    Utils.Debug('ACCOUNTS', 'getAccounts called by ' .. Player.PlayerData.citizenid)
     local accounts = GetPlayerAccounts(Player.PlayerData.citizenid)
+    Utils.Debug('ACCOUNTS', 'Returning ' .. #accounts .. ' accounts for ' .. Player.PlayerData.citizenid)
     cb(accounts)
 end)
 
 --- Get transaction history
 QBCore.Functions.CreateCallback('qb-banking:server:getTransactions', function(source, cb, accountId, page, filters)
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return cb({}) end
+    if not Player then Utils.Debug('TX', 'getTransactions: Player not found') return cb({}) end
+
+    Utils.Debug('TX', 'getTransactions: account=' .. tostring(accountId) .. ' page=' .. tostring(page) .. ' by ' .. Player.PlayerData.citizenid)
+    if filters then Utils.DebugTable('Transaction filters', filters) end
 
     if not VerifyAccountAccess(Player.PlayerData.citizenid, accountId) then
+        Utils.Debug('TX', 'getTransactions: Access denied for ' .. Player.PlayerData.citizenid .. ' on account ' .. tostring(accountId))
         return cb({})
     end
 
@@ -115,6 +126,7 @@ QBCore.Functions.CreateCallback('qb-banking:server:getTransactions', function(so
     params[#params + 1] = offset
 
     local transactions = MySQL.query.await(query, params)
+    Utils.Debug('TX', 'getTransactions: Returning ' .. #(transactions or {}) .. ' transactions, total=' .. tostring(countResult))
     cb({
         transactions = transactions or {},
         total = countResult or 0,
@@ -126,9 +138,11 @@ end)
 --- Get dashboard stats
 QBCore.Functions.CreateCallback('qb-banking:server:getDashboard', function(source, cb, accountId)
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return cb({}) end
+    if not Player then Utils.Debug('DASHBOARD', 'getDashboard: Player not found') return cb({}) end
 
+    Utils.Debug('DASHBOARD', 'getDashboard: account=' .. tostring(accountId) .. ' by ' .. Player.PlayerData.citizenid)
     if not VerifyAccountAccess(Player.PlayerData.citizenid, accountId) then
+        Utils.Debug('DASHBOARD', 'getDashboard: Access denied')
         return cb({})
     end
 
@@ -190,8 +204,9 @@ end)
 RegisterNetEvent('qb-banking:server:deposit', function(accountId, amount)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('DEPOSIT', 'Player not found for source ' .. tostring(src)) return end
 
+    Utils.Debug('DEPOSIT', 'Deposit request: account=' .. tostring(accountId) .. ' amount=' .. tostring(amount) .. ' by ' .. Player.PlayerData.citizenid)
     amount = tonumber(amount)
     local valid, err = Utils.ValidateAmount(amount, Config.Transactions.MinDeposit, Config.Transactions.MaxDeposit)
     if not valid then
@@ -209,9 +224,11 @@ RegisterNetEvent('qb-banking:server:deposit', function(accountId, amount)
     end
 
     -- Process deposit
+    Utils.Debug('DEPOSIT', 'Processing deposit: removing ' .. tostring(amount) .. ' cash from ' .. Player.PlayerData.citizenid)
     Player.Functions.RemoveMoney('cash', amount, 'bank-deposit')
 
     local newBalance = UpdateAccountBalance(accountId, amount, 'add')
+    Utils.Debug('DEPOSIT', 'Deposit complete: account=' .. tostring(accountId) .. ' newBalance=' .. tostring(newBalance))
     RecordTransaction(accountId, 'deposit', amount, 0, 0, newBalance, 'Cash deposit', nil, nil, Player.PlayerData.citizenid)
 
     -- Trigger tax event if applicable
@@ -231,8 +248,9 @@ end)
 RegisterNetEvent('qb-banking:server:withdraw', function(accountId, amount)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('WITHDRAW', 'Player not found for source ' .. tostring(src)) return end
 
+    Utils.Debug('WITHDRAW', 'Withdraw request: account=' .. tostring(accountId) .. ' amount=' .. tostring(amount) .. ' by ' .. Player.PlayerData.citizenid)
     amount = tonumber(amount)
     local valid, err = Utils.ValidateAmount(amount, Config.Transactions.MinWithdraw, Config.Transactions.MaxWithdraw)
     if not valid then
@@ -249,8 +267,10 @@ RegisterNetEvent('qb-banking:server:withdraw', function(accountId, amount)
     end
 
     -- Process withdrawal
+    Utils.Debug('WITHDRAW', 'Processing withdrawal: ' .. tostring(amount) .. ' from account ' .. tostring(accountId) .. ' (balance: ' .. tostring(account.balance) .. ')')
     local newBalance = UpdateAccountBalance(accountId, amount, 'subtract')
     Player.Functions.AddMoney('cash', amount, 'bank-withdrawal')
+    Utils.Debug('WITHDRAW', 'Withdrawal complete: newBalance=' .. tostring(newBalance))
 
     RecordTransaction(accountId, 'withdraw', amount, 0, 0, newBalance, 'Cash withdrawal', nil, nil, Player.PlayerData.citizenid)
 
@@ -268,8 +288,9 @@ end)
 RegisterNetEvent('qb-banking:server:transfer', function(fromAccountId, toIban, amount, description)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('TRANSFER', 'Player not found for source ' .. tostring(src)) return end
 
+    Utils.Debug('TRANSFER', 'Transfer request: from=' .. tostring(fromAccountId) .. ' to=' .. tostring(toIban) .. ' amount=' .. tostring(amount) .. ' by ' .. Player.PlayerData.citizenid)
     amount = tonumber(amount)
     local valid, err = Utils.ValidateAmount(amount, Config.Transactions.MinTransfer, Config.Transactions.MaxTransfer)
     if not valid then
@@ -293,6 +314,7 @@ RegisterNetEvent('qb-banking:server:transfer', function(fromAccountId, toIban, a
         tax = Utils.CalculateTransactionTax(amount)
     end
     local totalDeduction = amount + fee + tax
+    Utils.Debug('TRANSFER', 'Fee=' .. tostring(fee) .. ' Tax=' .. tostring(tax) .. ' TotalDeduction=' .. tostring(totalDeduction))
 
     -- Check balance
     local fromAccount = MySQL.single.await('SELECT * FROM bank_accounts WHERE id = ?', { fromAccountId })
@@ -301,8 +323,10 @@ RegisterNetEvent('qb-banking:server:transfer', function(fromAccountId, toIban, a
     end
 
     -- Process transfer
+    Utils.Debug('TRANSFER', 'Processing: deducting ' .. tostring(totalDeduction) .. ' from account ' .. tostring(fromAccountId))
     local fromBalance = UpdateAccountBalance(fromAccountId, totalDeduction, 'subtract')
     local toBalance = UpdateAccountBalance(toAccount.id, amount, 'add')
+    Utils.Debug('TRANSFER', 'Transfer complete: fromBalance=' .. tostring(fromBalance) .. ' toBalance=' .. tostring(toBalance))
 
     local desc = description or 'Transfer'
     RecordTransaction(fromAccountId, 'transfer_out', amount, fee, tax, fromBalance, desc, fromAccount.iban, toIban, Player.PlayerData.citizenid)
@@ -339,9 +363,10 @@ end)
 RegisterNetEvent('qb-banking:server:createAccount', function(accountType, accountName)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('ACCOUNT', 'createAccount: Player not found') return end
 
     local citizenid = Player.PlayerData.citizenid
+    Utils.Debug('ACCOUNT', 'Create account request: type=' .. tostring(accountType) .. ' name=' .. tostring(accountName) .. ' by ' .. citizenid)
 
     -- Validate account type
     if not Config.AccountTypes[accountType] then
@@ -373,9 +398,10 @@ end)
 RegisterNetEvent('qb-banking:server:closeAccount', function(accountId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('ACCOUNT', 'closeAccount: Player not found') return end
 
     local citizenid = Player.PlayerData.citizenid
+    Utils.Debug('ACCOUNT', 'Close account request: accountId=' .. tostring(accountId) .. ' by ' .. citizenid)
     local account = MySQL.single.await('SELECT * FROM bank_accounts WHERE id = ? AND owner_citizenid = ?', { accountId, citizenid })
 
     if not account then
@@ -384,10 +410,12 @@ RegisterNetEvent('qb-banking:server:closeAccount', function(accountId)
 
     -- Transfer remaining balance to cash
     if account.balance > 0 then
+        Utils.Debug('ACCOUNT', 'Closing account: transferring remaining balance ' .. tostring(account.balance) .. ' to cash')
         Player.Functions.AddMoney('cash', account.balance, 'account-closure')
     end
 
     MySQL.update.await('UPDATE bank_accounts SET is_closed = 1, balance = 0 WHERE id = ?', { accountId })
+    Utils.Debug('ACCOUNT', 'Account ' .. tostring(accountId) .. ' closed successfully')
     CachePlayerAccounts(citizenid)
 
     TriggerClientEvent('qb-banking:client:notify', src, L('account_closed'), 'success')
@@ -401,9 +429,10 @@ end)
 RegisterNetEvent('qb-banking:server:addSharedMember', function(accountId, targetCitizenId, role)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('SHARED', 'addSharedMember: Player not found') return end
 
-    if not Config.AllowSharedAccounts then return end
+    Utils.Debug('SHARED', 'Add member request: account=' .. tostring(accountId) .. ' target=' .. tostring(targetCitizenId) .. ' role=' .. tostring(role))
+    if not Config.AllowSharedAccounts then Utils.Debug('SHARED', 'Shared accounts disabled in config') return end
 
     local account = MySQL.single.await('SELECT * FROM bank_accounts WHERE id = ? AND owner_citizenid = ? AND account_type = ?', {
         accountId, Player.PlayerData.citizenid, 'shared'
@@ -427,7 +456,8 @@ end)
 RegisterNetEvent('qb-banking:server:removeSharedMember', function(accountId, targetCitizenId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('SHARED', 'removeSharedMember: Player not found') return end
+    Utils.Debug('SHARED', 'Remove member request: account=' .. tostring(accountId) .. ' target=' .. tostring(targetCitizenId))
 
     local account = MySQL.single.await('SELECT * FROM bank_accounts WHERE id = ? AND owner_citizenid = ?', {
         accountId, Player.PlayerData.citizenid
@@ -452,11 +482,14 @@ end)
 function GenerateUniqueIBAN()
     local iban
     local exists = true
+    local attempts = 0
     while exists do
         iban = Utils.GenerateIBAN()
         local count = MySQL.scalar.await('SELECT COUNT(*) FROM bank_accounts WHERE iban = ?', { iban })
         exists = count > 0
+        attempts = attempts + 1
     end
+    Utils.Debug('IBAN', 'Generated unique IBAN: ' .. iban .. ' (attempts: ' .. attempts .. ')')
     return iban
 end
 
@@ -466,17 +499,20 @@ end
 ---@param operation string 'add' or 'subtract'
 ---@return number newBalance
 function UpdateAccountBalance(accountId, amount, operation)
+    Utils.Debug('BALANCE', 'UpdateAccountBalance: account=' .. tostring(accountId) .. ' amount=' .. tostring(amount) .. ' op=' .. tostring(operation))
     if operation == 'add' then
         MySQL.update.await('UPDATE bank_accounts SET balance = balance + ? WHERE id = ?', { amount, accountId })
     else
         MySQL.update.await('UPDATE bank_accounts SET balance = balance - ? WHERE id = ?', { amount, accountId })
     end
     local newBalance = MySQL.scalar.await('SELECT balance FROM bank_accounts WHERE id = ?', { accountId })
+    Utils.Debug('BALANCE', 'Balance updated: account=' .. tostring(accountId) .. ' newBalance=' .. tostring(newBalance))
     return newBalance or 0
 end
 
 --- Record a transaction in the database
 function RecordTransaction(accountId, txType, amount, fee, tax, balanceAfter, description, fromIban, toIban, initiatedBy)
+    Utils.Debug('TX_LOG', 'Recording: type=' .. tostring(txType) .. ' amount=' .. tostring(amount) .. ' fee=' .. tostring(fee) .. ' tax=' .. tostring(tax) .. ' balance_after=' .. tostring(balanceAfter) .. ' account=' .. tostring(accountId))
     MySQL.insert('INSERT INTO bank_transactions (account_id, type, amount, fee, tax, balance_after, description, from_iban, to_iban, initiated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', {
         accountId, txType, amount, fee or 0, tax or 0, balanceAfter, description, fromIban, toIban, initiatedBy
     })
@@ -484,6 +520,7 @@ end
 
 --- Record a tax entry
 function RecordTax(citizenid, accountId, taxType, amount, taxableAmount, rate, description)
+    Utils.Debug('TAX_LOG', 'Recording tax: citizen=' .. tostring(citizenid) .. ' type=' .. tostring(taxType) .. ' amount=' .. tostring(amount) .. ' taxable=' .. tostring(taxableAmount) .. ' rate=' .. tostring(rate))
     MySQL.insert('INSERT INTO bank_tax_records (citizenid, account_id, tax_type, amount, taxable_amount, rate, description) VALUES (?, ?, ?, ?, ?, ?, ?)', {
         citizenid, accountId, taxType, amount, taxableAmount, rate, description
     })
@@ -494,16 +531,21 @@ end
 ---@param accountId number
 ---@return boolean
 function VerifyAccountAccess(citizenid, accountId)
+    Utils.Debug('ACCESS', 'Verifying access: citizen=' .. tostring(citizenid) .. ' account=' .. tostring(accountId))
     -- Check if owner
     local isOwner = MySQL.scalar.await('SELECT COUNT(*) FROM bank_accounts WHERE id = ? AND owner_citizenid = ? AND is_closed = 0', {
         accountId, citizenid
     })
-    if isOwner > 0 then return true end
+    if isOwner > 0 then
+        Utils.Debug('ACCESS', 'Access granted (owner) for ' .. tostring(citizenid) .. ' on account ' .. tostring(accountId))
+        return true
+    end
 
     -- Check if shared member
     local isMember = MySQL.scalar.await('SELECT COUNT(*) FROM bank_account_members WHERE account_id = ? AND citizenid = ?', {
         accountId, citizenid
     })
+    Utils.Debug('ACCESS', 'Access ' .. (isMember > 0 and 'granted (member)' or 'DENIED') .. ' for ' .. tostring(citizenid) .. ' on account ' .. tostring(accountId))
     return isMember > 0
 end
 
@@ -521,6 +563,7 @@ end
 ---@param citizenid string
 ---@return table
 function CachePlayerAccounts(citizenid)
+    Utils.Debug('CACHE', 'Caching accounts for ' .. tostring(citizenid))
     local owned = MySQL.query.await([[
         SELECT a.*, 'owner' as access_role
         FROM bank_accounts a
@@ -541,6 +584,7 @@ function CachePlayerAccounts(citizenid)
         end
     end
 
+    Utils.Debug('CACHE', 'Cached ' .. #accounts .. ' accounts for ' .. tostring(citizenid) .. ' (owned: ' .. #(owned or {}) .. ', shared: ' .. #(shared or {}) .. ')')
     ServerCache.accounts[citizenid] = accounts
     return accounts
 end
@@ -578,8 +622,15 @@ end
 ---@param logType string
 ---@param message string
 function LogToDiscord(logType, message)
-    if not Config.Admin.DiscordWebhook or Config.Admin.DiscordWebhook == '' then return end
-    if not Config.Admin.LogTypes[logType] then return end
+    if not Config.Admin.DiscordWebhook or Config.Admin.DiscordWebhook == '' then
+        Utils.Debug('DISCORD', 'Webhook not configured, skipping log: ' .. tostring(logType))
+        return
+    end
+    if not Config.Admin.LogTypes[logType] then
+        Utils.Debug('DISCORD', 'Log type disabled: ' .. tostring(logType))
+        return
+    end
+    Utils.Debug('DISCORD', 'Sending webhook: type=' .. tostring(logType))
 
     PerformHttpRequest(Config.Admin.DiscordWebhook, function(err, text, headers) end, 'POST',
         json.encode({
@@ -604,19 +655,21 @@ CreateThread(function()
     while true do
         Wait(60000 * 5) -- Check every 5 minutes
 
-        if Config.Transactions.AllowScheduledTransfers then
-            local pending = MySQL.query.await([[
-                SELECT st.*, a.owner_citizenid, a.iban as from_iban
-                FROM bank_scheduled_transfers st
-                JOIN bank_accounts a ON st.from_account_id = a.id
-                WHERE st.is_active = 1 AND st.next_execution <= NOW()
-            ]])
+            if Config.Transactions.AllowScheduledTransfers then
+                local pending = MySQL.query.await([[
+                    SELECT st.*, a.owner_citizenid, a.iban as from_iban
+                    FROM bank_scheduled_transfers st
+                    JOIN bank_accounts a ON st.from_account_id = a.id
+                    WHERE st.is_active = 1 AND st.next_execution <= NOW()
+                ]])
 
-            if pending then
-                for _, transfer in ipairs(pending) do
-                    ProcessScheduledTransfer(transfer)
+                if pending and #pending > 0 then
+                    Utils.Debug('SCHEDULED', 'Found ' .. #pending .. ' pending scheduled transfers')
+                    for _, transfer in ipairs(pending) do
+                        Utils.Debug('SCHEDULED', 'Processing transfer #' .. tostring(transfer.id) .. ': ' .. tostring(transfer.amount) .. ' to ' .. tostring(transfer.to_iban))
+                        ProcessScheduledTransfer(transfer)
+                    end
                 end
-            end
         end
     end
 end)
@@ -624,8 +677,10 @@ end)
 --- Process a scheduled transfer
 ---@param transfer table
 function ProcessScheduledTransfer(transfer)
+    Utils.Debug('SCHEDULED', 'Processing scheduled transfer #' .. tostring(transfer.id))
     local toAccount = MySQL.single.await('SELECT * FROM bank_accounts WHERE iban = ? AND is_closed = 0', { transfer.to_iban })
     if not toAccount then
+        Utils.Debug('SCHEDULED', 'Recipient account not found for IBAN ' .. tostring(transfer.to_iban) .. ' - deactivating transfer')
         MySQL.update.await('UPDATE bank_scheduled_transfers SET is_active = 0 WHERE id = ?', { transfer.id })
         return
     end
@@ -664,9 +719,10 @@ end
 RegisterNetEvent('qb-banking:server:scheduleTransfer', function(fromAccountId, toIban, amount, description, frequency, executeDate)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('SCHEDULED', 'scheduleTransfer: Player not found') return end
 
-    if not Config.Transactions.AllowScheduledTransfers then return end
+    Utils.Debug('SCHEDULED', 'Schedule transfer request: from=' .. tostring(fromAccountId) .. ' to=' .. tostring(toIban) .. ' amount=' .. tostring(amount) .. ' freq=' .. tostring(frequency) .. ' date=' .. tostring(executeDate))
+    if not Config.Transactions.AllowScheduledTransfers then Utils.Debug('SCHEDULED', 'Scheduled transfers disabled in config') return end
 
     amount = tonumber(amount)
     local valid, err = Utils.ValidateAmount(amount, Config.Transactions.MinTransfer, Config.Transactions.MaxTransfer)

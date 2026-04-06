@@ -9,6 +9,7 @@ local QBCore = exports['qb-core']:GetCoreObject()
 ---@param type string 'success', 'error', 'warning', 'info'
 RegisterNetEvent('qb-banking:client:notify', function(message, type)
     local notifType = type or 'info'
+    Utils.Debug('NOTIFY', 'Notification: type=' .. tostring(notifType) .. ' system=' .. tostring(Config.Notifications.System) .. ' msg=' .. tostring(message))
 
     if Config.Notifications.System == 'qb' then
         -- QBCore native notification
@@ -27,6 +28,7 @@ RegisterNetEvent('qb-banking:client:notify', function(message, type)
     end
 
     -- Play notification sound
+    Utils.Debug('NOTIFY', 'Sound enabled: ' .. tostring(Config.Notifications.SoundEnabled))
     if Config.Notifications.SoundEnabled then
         SendNUIMessage({
             action = 'playSound',

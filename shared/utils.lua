@@ -172,10 +172,34 @@ function Utils.DeepCopy(orig)
     return copy
 end
 
---- Debug print helper
+--- Debug print helper with category support
+---@param category string|nil Optional category tag (e.g. 'DEPOSIT', 'LOAN', 'ADMIN')
 ---@param ... any
-function Utils.Debug(...)
+function Utils.Debug(category, ...)
     if Config.Debug then
-        print('[QB-Banking Debug]', ...)
+        local timestamp = os.date('%H:%M:%S')
+        if select('#', ...) == 0 then
+            -- Single argument call (backward compatible): treat category as the message
+            print(string.format('[QB-Banking %s]', timestamp), category)
+        else
+            print(string.format('[QB-Banking %s][%s]', timestamp, tostring(category)), ...)
+        end
+    end
+end
+
+--- Debug print for data tables (pretty-print)
+---@param label string
+---@param tbl table
+function Utils.DebugTable(label, tbl)
+    if Config.Debug then
+        local timestamp = os.date('%H:%M:%S')
+        print(string.format('[QB-Banking %s][TABLE] %s:', timestamp, label))
+        if type(tbl) == 'table' then
+            for k, v in pairs(tbl) do
+                print(string.format('  %s = %s (%s)', tostring(k), tostring(v), type(v)))
+            end
+        else
+            print('  (not a table: ' .. type(tbl) .. ') = ' .. tostring(tbl))
+        end
     end
 end

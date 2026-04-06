@@ -7,27 +7,32 @@ local QBCore = exports['qb-core']:GetCoreObject()
 --- Get available loan plans for a player
 QBCore.Functions.CreateCallback('qb-banking:server:getLoanPlans', function(source, cb)
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return cb({}) end
+    if not Player then Utils.Debug('LOAN', 'getLoanPlans: Player not found') return cb({}) end
 
-    if not Config.Loans.Enabled then return cb({}) end
+    Utils.Debug('LOAN', 'getLoanPlans called by ' .. Player.PlayerData.citizenid)
+    if not Config.Loans.Enabled then Utils.Debug('LOAN', 'Loan system disabled') return cb({}) end
 
     local creditScore = GetCreditScore(Player.PlayerData.citizenid)
+    Utils.Debug('LOAN', 'Player credit score: ' .. tostring(creditScore))
     local plans = {}
 
     for _, plan in ipairs(Config.Loans.Plans) do
         local planCopy = Utils.DeepCopy(plan)
         planCopy.eligible = creditScore >= plan.minCreditScore
         planCopy.playerCreditScore = creditScore
+        Utils.Debug('LOAN', 'Plan ' .. plan.id .. ': eligible=' .. tostring(planCopy.eligible) .. ' (requires ' .. tostring(plan.minCreditScore) .. ')')
         plans[#plans + 1] = planCopy
     end
 
+    Utils.Debug('LOAN', 'Returning ' .. #plans .. ' loan plans')
     cb(plans)
 end)
 
 --- Get active loans for a player
 QBCore.Functions.CreateCallback('qb-banking:server:getLoans', function(source, cb)
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return cb({}) end
+    if not Player then Utils.Debug('LOAN', 'getLoans: Player not found') return cb({}) end
+    Utils.Debug('LOAN', 'getLoans called by ' .. Player.PlayerData.citizenid)
 
     local loans = MySQL.query.await([[
         SELECT l.*, a.iban as account_iban
@@ -37,6 +42,7 @@ QBCore.Functions.CreateCallback('qb-banking:server:getLoans', function(source, c
         ORDER BY l.created_at DESC
     ]], { Player.PlayerData.citizenid })
 
+    Utils.Debug('LOAN', 'Returning ' .. #(loans or {}) .. ' loans for ' .. Player.PlayerData.citizenid)
     cb(loans or {})
 end)
 
@@ -47,9 +53,11 @@ end)
 RegisterNetEvent('qb-banking:server:applyLoan', function(planId, amount, accountId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('LOAN', 'applyLoan: Player not found') return end
 
+    Utils.Debug('LOAN', 'Loan application: plan=' .. tostring(planId) .. ' amount=' .. tostring(amount) .. ' account=' .. tostring(accountId) .. ' by source ' .. tostring(src))
     if not Config.Loans.Enabled then
+        Utils.Debug('LOAN', 'Loan system disabled')
         return TriggerClientEvent('qb-banking:client:notify', src, L('error'), 'error')
     end
 
@@ -82,7 +90,9 @@ RegisterNetEvent('qb-banking:server:applyLoan', function(planId, amount, account
 
     -- Check credit score
     local creditScore = GetCreditScore(citizenid)
+    Utils.Debug('LOAN', 'Credit score check: player=' .. tostring(creditScore) .. ' required=' .. tostring(plan.minCreditScore))
     if creditScore < plan.minCreditScore then
+        Utils.Debug('LOAN', 'REJECTED: Credit score too low')
         return TriggerClientEvent('qb-banking:client:notify', src, L('credit_score_low'), 'error')
     end
 
@@ -90,12 +100,15 @@ RegisterNetEvent('qb-banking:server:applyLoan', function(planId, amount, account
     local activeLoans = MySQL.scalar.await('SELECT COUNT(*) FROM bank_loans WHERE citizenid = ? AND status = ?', {
         citizenid, 'active'
     })
+    Utils.Debug('LOAN', 'Active loans: ' .. tostring(activeLoans) .. '/' .. tostring(Config.Loans.MaxActiveLoans))
     if activeLoans >= Config.Loans.MaxActiveLoans then
+        Utils.Debug('LOAN', 'REJECTED: Loan limit reached')
         return TriggerClientEvent('qb-banking:client:notify', src, L('loan_limit_reached'), 'error')
     end
 
     -- Calculate loan details
     local details = Utils.CalculateLoanDetails(plan, amount)
+    Utils.Debug('LOAN', 'Loan details: principal=' .. tostring(details.principal) .. ' interest=' .. tostring(details.interest) .. ' total=' .. tostring(details.totalAmount) .. ' installments=' .. tostring(details.installments))
 
     -- Calculate first payment due date
     local intervalDays = math.ceil(plan.durationDays / plan.installments)
@@ -113,6 +126,7 @@ RegisterNetEvent('qb-banking:server:applyLoan', function(planId, amount, account
     -- Deposit loan amount to account
     local newBalance = UpdateAccountBalance(accountId, amount, 'add')
     RecordTransaction(accountId, 'loan_deposit', amount, 0, 0, newBalance, 'Loan disbursement: ' .. plan.label, nil, nil, citizenid)
+    Utils.Debug('LOAN', 'APPROVED: Loan #' .. tostring(loanId) .. ' disbursed ' .. tostring(amount) .. ' to account ' .. tostring(accountId) .. ' (newBalance=' .. tostring(newBalance) .. ')')
 
     TriggerClientEvent('qb-banking:client:notify', src, L('loan_approved', Utils.FormatMoney(amount)), 'success')
     TriggerClientEvent('qb-banking:client:refreshAccounts', src)
@@ -128,9 +142,10 @@ end)
 RegisterNetEvent('qb-banking:server:repayLoan', function(loanId, amount, accountId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('LOAN', 'repayLoan: Player not found') return end
 
     local citizenid = Player.PlayerData.citizenid
+    Utils.Debug('LOAN', 'Repay request: loan=' .. tostring(loanId) .. ' amount=' .. tostring(amount) .. ' account=' .. tostring(accountId) .. ' by ' .. citizenid)
 
     local loan = MySQL.single.await('SELECT * FROM bank_loans WHERE id = ? AND citizenid = ? AND status = ?', {
         loanId, citizenid, 'active'
@@ -171,6 +186,7 @@ end)
 ---@param citizenid string
 ---@param paymentType string 'manual' or 'auto'
 function ProcessLoanPayment(loan, amount, accountId, citizenid, paymentType)
+    Utils.Debug('LOAN', 'ProcessLoanPayment: loan=' .. tostring(loan.id) .. ' amount=' .. tostring(amount) .. ' type=' .. tostring(paymentType) .. ' account=' .. tostring(accountId))
     local newBalance = UpdateAccountBalance(accountId, amount, 'subtract')
     RecordTransaction(accountId, 'loan_payment', amount, 0, 0, newBalance, 'Loan payment #' .. loan.id, nil, nil, citizenid)
 
@@ -183,7 +199,9 @@ function ProcessLoanPayment(loan, amount, accountId, citizenid, paymentType)
     if newAmountPaid >= totalOwed then
         status = 'paid'
         newAmountPaid = totalOwed
+        Utils.Debug('LOAN', 'Loan #' .. tostring(loan.id) .. ' FULLY PAID')
     end
+    Utils.Debug('LOAN', 'Payment processed: paid=' .. tostring(newAmountPaid) .. '/' .. tostring(totalOwed) .. ' installments=' .. tostring(installmentsPaid) .. '/' .. tostring(loan.installments_total) .. ' status=' .. status)
 
     -- Calculate next payment due
     local plan = nil
@@ -234,12 +252,15 @@ CreateThread(function()
             WHERE l.status = 'active' AND l.auto_repay = 1 AND l.next_payment_due <= NOW()
         ]])
 
-        if dueLoans then
+        if dueLoans and #dueLoans > 0 then
+            Utils.Debug('LOAN', 'Auto-repayment: Found ' .. #dueLoans .. ' loans due for payment')
             for _, loan in ipairs(dueLoans) do
                 local remaining = loan.total_amount + loan.late_fees - loan.amount_paid
                 local payAmount = math.min(loan.installment_amount, remaining)
+                Utils.Debug('LOAN', 'Auto-repay loan #' .. tostring(loan.id) .. ': payAmount=' .. tostring(payAmount) .. ' balance=' .. tostring(loan.account_balance) .. ' remaining=' .. tostring(remaining))
 
                 if loan.account_balance >= payAmount then
+                    Utils.Debug('LOAN', 'Auto-repay: sufficient balance, processing payment')
                     ProcessLoanPayment(loan, payAmount, loan.account_id, loan.citizenid, 'auto')
 
                     -- Notify player if online
@@ -250,6 +271,7 @@ CreateThread(function()
                     end
                 else
                     -- Apply late penalty
+                    Utils.Debug('LOAN', 'Auto-repay: insufficient balance for loan #' .. tostring(loan.id) .. ' - applying late penalty')
                     ApplyLatePenalty(loan)
                 end
             end
@@ -262,14 +284,16 @@ end)
 --- Apply late payment penalty
 ---@param loan table
 function ApplyLatePenalty(loan)
+    Utils.Debug('LOAN', 'ApplyLatePenalty: loan #' .. tostring(loan.id) .. ' citizen=' .. tostring(loan.citizenid))
     local plan = nil
     for _, p in ipairs(Config.Loans.Plans) do
         if p.id == loan.plan_id then plan = p break end
     end
-    if not plan then return end
+    if not plan then Utils.Debug('LOAN', 'Plan not found for loan #' .. tostring(loan.id)) return end
 
     local penaltyAmount = loan.installment_amount * (plan.latePenaltyPercent / 100)
     penaltyAmount = Utils.Round(penaltyAmount)
+    Utils.Debug('LOAN', 'Late penalty: ' .. tostring(penaltyAmount) .. ' (' .. tostring(plan.latePenaltyPercent) .. '% of ' .. tostring(loan.installment_amount) .. ')')
 
     MySQL.update.await('UPDATE bank_loans SET late_fees = late_fees + ? WHERE id = ?', { penaltyAmount, loan.id })
 

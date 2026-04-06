@@ -7,9 +7,10 @@ local QBCore = exports['qb-core']:GetCoreObject()
 --- Get invoices for a player (sent and received)
 QBCore.Functions.CreateCallback('qb-banking:server:getInvoices', function(source, cb, filter)
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return cb({}) end
+    if not Player then Utils.Debug('BILLING', 'getInvoices: Player not found') return cb({}) end
 
-    if not Config.Billing.Enabled then return cb({}) end
+    Utils.Debug('BILLING', 'getInvoices called by ' .. Player.PlayerData.citizenid .. ' filter=' .. tostring(filter))
+    if not Config.Billing.Enabled then Utils.Debug('BILLING', 'Billing system disabled') return cb({}) end
 
     local citizenid = Player.PlayerData.citizenid
 
@@ -21,6 +22,7 @@ QBCore.Functions.CreateCallback('qb-banking:server:getInvoices', function(source
         SELECT * FROM bank_invoices WHERE from_citizenid = ? ORDER BY created_at DESC LIMIT 50
     ]], { citizenid })
 
+    Utils.Debug('BILLING', 'Returning invoices: received=' .. #(received or {}) .. ' sent=' .. #(sent or {}))
     cb({
         received = received or {},
         sent = sent or {},
@@ -35,18 +37,21 @@ end)
 RegisterNetEvent('qb-banking:server:sendInvoice', function(targetCitizenId, amount, category, description)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('BILLING', 'sendInvoice: Player not found') return end
 
-    if not Config.Billing.Enabled then return end
+    Utils.Debug('BILLING', 'Send invoice: target=' .. tostring(targetCitizenId) .. ' amount=' .. tostring(amount) .. ' category=' .. tostring(category))
+    if not Config.Billing.Enabled then Utils.Debug('BILLING', 'Billing system disabled') return end
 
     local citizenid = Player.PlayerData.citizenid
     local jobName = Player.PlayerData.job.name
+    Utils.Debug('BILLING', 'Sender job: ' .. tostring(jobName))
     amount = tonumber(amount)
 
     -- Validate the sender is authorized
     local isAuthorized = false
     local maxAmount = math.huge
 
+    Utils.Debug('BILLING', 'Checking authorization for job: ' .. tostring(jobName))
     if Config.Billing.AuthorizedJobs[jobName] then
         local jobConfig = Config.Billing.AuthorizedJobs[jobName]
         isAuthorized = true
@@ -77,6 +82,7 @@ RegisterNetEvent('qb-banking:server:sendInvoice', function(targetCitizenId, amou
 
     -- Generate invoice number
     local invoiceNumber = 'INV-' .. os.time() .. '-' .. math.random(1000, 9999)
+    Utils.Debug('BILLING', 'Invoice created: ' .. invoiceNumber .. ' from=' .. citizenid .. ' to=' .. tostring(targetCitizenId) .. ' amount=' .. tostring(amount))
 
     -- Calculate due date
     local dueDate = os.date('%Y-%m-%d %H:%M:%S', os.time() + (Config.Billing.OverdueAfterHours * 3600))
@@ -109,9 +115,10 @@ end)
 RegisterNetEvent('qb-banking:server:payInvoice', function(invoiceId, accountId, amount)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
+    if not Player then Utils.Debug('BILLING', 'payInvoice: Player not found') return end
 
     local citizenid = Player.PlayerData.citizenid
+    Utils.Debug('BILLING', 'Pay invoice: id=' .. tostring(invoiceId) .. ' account=' .. tostring(accountId) .. ' amount=' .. tostring(amount) .. ' by ' .. citizenid)
 
     local invoice = MySQL.single.await('SELECT * FROM bank_invoices WHERE id = ? AND to_citizenid = ? AND status IN (?, ?)', {
         invoiceId, citizenid, 'pending', 'overdue'
@@ -124,6 +131,7 @@ RegisterNetEvent('qb-banking:server:payInvoice', function(invoiceId, accountId, 
     amount = tonumber(amount)
     local remaining = invoice.amount - invoice.amount_paid
 
+    Utils.Debug('BILLING', 'Invoice remaining: ' .. tostring(remaining) .. ' (total=' .. tostring(invoice.amount) .. ' paid=' .. tostring(invoice.amount_paid) .. ')')
     -- Handle partial payments
     if Config.Billing.AllowPartialPayments and amount < remaining then
         if amount < Config.Billing.MinPartialPayment then
@@ -144,12 +152,14 @@ RegisterNetEvent('qb-banking:server:payInvoice', function(invoiceId, accountId, 
     end
 
     -- Process payment
+    Utils.Debug('BILLING', 'Processing invoice payment: ' .. tostring(amount) .. ' from account ' .. tostring(accountId))
     local newBalance = UpdateAccountBalance(accountId, amount, 'subtract')
     RecordTransaction(accountId, 'invoice_payment', amount, 0, 0, newBalance,
         'Invoice #' .. invoice.invoice_number, nil, nil, citizenid)
 
     local newAmountPaid = invoice.amount_paid + amount
     local status = newAmountPaid >= invoice.amount and 'paid' or 'partial'
+    Utils.Debug('BILLING', 'Invoice payment: newAmountPaid=' .. tostring(newAmountPaid) .. ' status=' .. status)
 
     MySQL.update.await('UPDATE bank_invoices SET amount_paid = ?, status = ? WHERE id = ?', {
         newAmountPaid, status, invoiceId
@@ -196,6 +206,7 @@ CreateThread(function()
 
         if not Config.Billing.Enabled then goto continue end
 
+        Utils.Debug('BILLING', 'Running invoice reminder & overdue check')
         -- Send reminders for pending invoices
         local remindableInvoices = MySQL.query.await([[
             SELECT * FROM bank_invoices
@@ -204,7 +215,8 @@ CreateThread(function()
             AND created_at <= DATE_SUB(NOW(), INTERVAL ? HOUR)
         ]], { Config.Billing.AutoReminderHours })
 
-        if remindableInvoices then
+        if remindableInvoices and #remindableInvoices > 0 then
+            Utils.Debug('BILLING', 'Sending reminders for ' .. #remindableInvoices .. ' invoices')
             for _, invoice in ipairs(remindableInvoices) do
                 -- Mark reminder sent
                 MySQL.update.await('UPDATE bank_invoices SET reminder_sent = 1 WHERE id = ?', { invoice.id })
@@ -225,7 +237,8 @@ CreateThread(function()
             AND due_date <= NOW()
         ]])
 
-        if overdueInvoices then
+        if overdueInvoices and #overdueInvoices > 0 then
+            Utils.Debug('BILLING', 'Marking ' .. #overdueInvoices .. ' invoices as overdue')
             for _, invoice in ipairs(overdueInvoices) do
                 local penaltyAmount = 0
                 if not invoice.penalty_applied or invoice.penalty_applied == 0 then
